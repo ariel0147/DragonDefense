@@ -1,10 +1,61 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dragon Castle Defense</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-$END$
+
+<div id="game-container">
+
+    <div id="ui-layer">
+        <div class="stat">שלב: <span id="level">1</span></div>
+        <div class="stat">חיים: <span id="health">100/100</span></div>
+        <div class="stat">זהב: <span id="gold">100</span></div>
+        <button id="upgrade-btn" onclick="toggleUpgradeMenu()">שדרוגים 🛒</button>
+    </div>
+
+    <div id="upgrade-modal" class="hidden">
+        <h2>🏰 חנות השדרוגים</h2>
+
+        <div class="upgrade-item">
+            <span>🔥 כוח התקפה</span>
+            <button onclick="buyUpgrade('damage')">שדרג (<span id="cost-damage">50</span> 🟡)</button>
+        </div>
+
+        <div class="upgrade-item">
+            <span>⚡ מהירות ירייה</span>
+            <button onclick="buyUpgrade('speed')">שדרג (<span id="cost-speed">50</span> 🟡)</button>
+        </div>
+
+        <div class="upgrade-item">
+            <span>🛡️ חיזוק טירה</span>
+            <button onclick="buyUpgrade('maxHealth')">שדרג (<span id="cost-maxHealth">40</span> 🟡)</button>
+        </div>
+
+        <div class="upgrade-item">
+            <span>❤️ התחדשות</span>
+            <button onclick="buyUpgrade('regen')">שדרג (<span id="cost-regen">60</span> 🟡)</button>
+        </div>
+
+        <button onclick="toggleUpgradeMenu()" class="close-btn">סגור חנות</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="dragon-selector">
+        <h2>בחר את הדרקון שלך</h2>
+        <div class="options">
+            <button onclick="startGame('fire')" class="fire">דרקון אש 🔥</button>
+            <button onclick="startGame('electric')" class="electric">דרקון חשמל ⚡</button>
+            <button onclick="startGame('poison')" class="poison">דרקון רעל ☠️</button>
+        </div>
+    </div>
+
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
