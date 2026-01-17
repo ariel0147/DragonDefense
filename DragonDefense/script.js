@@ -5,32 +5,43 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// --- הגדרות אנימציה לדרקונים (מעודכן לפי 717x391) ---
+const spriteConfig = {
+    // חישוב: 717 לחלק ל-3 פריימים = 239 רוחב לפריים
+    frameWidth: 239,
+    frameHeight: 391,
+    maxFrames: 3,      // שונה ל-3 פריימים
+    gameFrame: 0,
+    staggerFrames: 10
+};
+
 // --- טעינת תמונות ---
 const images = {
     background: new Image(),
     castle: new Image(),
-    dragon: new Image(),
+    dragonFire: new Image(),
+    dragonElectric: new Image(),
+    dragonPoison: new Image(),
     skeleton: new Image()
 };
 
 images.background.src = 'assets/background.png';
 images.castle.src = 'assets/castle.png';
-images.dragon.src = 'assets/dragon.png';
 images.skeleton.src = 'assets/skeleton.png';
 
-// --- הגדרות מיקום וגודל מעודכנות ---
+images.dragonFire.src = 'assets/dragon f.png';
+images.dragonElectric.src = 'assets/dragon e.png';
+images.dragonPoison.src = 'assets/dragon p.png';
 
-// הרמנו את קו הקרקע למעלה כדי להתאים לשביל
+// --- הגדרות מיקום וגודל ---
 const groundLevel = canvas.height - 220;
-
-// נתוני הטירה
 const castleSize = 400;
 const castlePos = {
     x: canvas.width - 410,
-    y: groundLevel - 320 // מותאם לקו הקרקע החדש
+    y: groundLevel - 320
 };
 
-// --- משתני משחק (Stats) ---
+// --- משתני משחק ---
 let gameActive = false;
 let score = 0;
 let level = 1;
@@ -38,14 +49,12 @@ let gold = 100;
 let castleHealth = 100;
 let maxCastleHealth = 100;
 
-// נתוני שדרוגים
 let damage = 20;
 let attackSpeed = 1000;
 let lastShotTime = 0;
 let regenRate = 0;
 let projectileSpeed = 8;
 
-// סוג דרקון שנבחר
 let selectedDragonType = 'fire';
 
 const dragonColors = {
@@ -54,7 +63,7 @@ const dragonColors = {
     'poison': 'rgb(0,255,0)'
 };
 
-// --- מחלקות (Classes) ---
+// --- מחלקות ---
 
 class Projectile {
     constructor(x, y, targetX, targetY) {
@@ -90,7 +99,6 @@ class Projectile {
 class Enemy {
     constructor() {
         this.x = -50;
-        // מיקום האויבים מותאם לקו הקרקע החדש
         this.y = groundLevel + 20;
         this.width = 60;
         this.height = 80;
@@ -98,14 +106,11 @@ class Enemy {
         this.maxHealth = 20 + (level * 10);
         this.health = this.maxHealth;
         this.markedForDeletion = false;
-
-        // וריאציה קטנה במיקום
         this.y += Math.random() * 20 - 10;
     }
 
     update() {
         this.x += this.speed;
-
         if (this.x > castlePos.x + 40) {
             this.markedForDeletion = true;
             takeDamage(10);
@@ -115,11 +120,6 @@ class Enemy {
     draw() {
         ctx.save();
         ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-
-        // --- תיקון כיוון האויבים ---
-        // הסרתי את ה-scale(-1, 1) כדי להפוך את הכיוון
-        ctx.scale(1, 1);
-
         const walkCycle = Math.sin(Date.now() / 150) * 0.15;
         ctx.rotate(walkCycle);
 
@@ -129,10 +129,8 @@ class Enemy {
             ctx.fillStyle = 'red';
             ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
         }
-
         ctx.restore();
 
-        // בר חיים
         const healthPercent = this.health / this.maxHealth;
         ctx.fillStyle = 'red';
         ctx.fillRect(this.x, this.y - 15, this.width, 5);
@@ -141,23 +139,21 @@ class Enemy {
     }
 }
 
-// --- ניהול משחק ---
 let projectiles = [];
 let enemies = [];
 
-// פונקציות ממשק
+// --- פונקציות משחק ---
+
 window.startGame = function(type) {
     selectedDragonType = type;
     document.getElementById('dragon-selector').style.display = 'none';
     gameActive = true;
     animate();
 
-    // יצירת אויבים
     setInterval(() => {
         if (gameActive) enemies.push(new Enemy());
     }, 2500 - (level * 50));
 
-    // התחדשות חיים
     setInterval(() => {
         if (gameActive && castleHealth < maxCastleHealth) {
             castleHealth = Math.min(maxCastleHealth, castleHealth + regenRate);
@@ -167,8 +163,7 @@ window.startGame = function(type) {
 };
 
 window.toggleUpgradeMenu = function() {
-    const modal = document.getElementById('upgrade-modal');
-    modal.classList.toggle('hidden');
+    document.getElementById('upgrade-modal').classList.toggle('hidden');
 };
 
 window.buyUpgrade = function(type) {
@@ -181,7 +176,6 @@ window.buyUpgrade = function(type) {
 
     if (gold >= costs[type]) {
         gold -= costs[type];
-
         if (type === 'damage') {
             damage += 5;
             document.getElementById('cost-damage').innerText = Math.floor(costs[type] * 1.5);
@@ -219,57 +213,75 @@ function updateUI() {
     document.getElementById('level').innerText = level;
 }
 
-// לולאת המשחק
+// לולאת האנימציה הראשית
 function animate() {
     if (!gameActive) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. ציור רקע
-    if (images.background.complete) {
-        ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
-    }
+    // 1. רקע
+    if (images.background.complete) ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
 
-    // 2. ציור טירה
-    if (images.castle.complete) {
-        ctx.drawImage(images.castle, castlePos.x, castlePos.y, castleSize, castleSize);
-    }
+    // 2. טירה
+    if (images.castle.complete) ctx.drawImage(images.castle, castlePos.x, castlePos.y, castleSize, castleSize);
 
-    // 3. ציור הדרקון (גם הוא עלה למעלה עם קו הקרקע החדש)
+    // 3. לוגיקת אנימציית דרקון
+    let currentDragonImg;
+    if (selectedDragonType === 'fire') currentDragonImg = images.dragonFire;
+    else if (selectedDragonType === 'electric') currentDragonImg = images.dragonElectric;
+    else if (selectedDragonType === 'poison') currentDragonImg = images.dragonPoison;
+
     const hoverOffset = Math.sin(Date.now() / 400) * 12;
-    const dragonSize = 200;
-    const dragonX = castlePos.x - 150;
-    // מיקום הדרקון מחושב מחדש לפי הטירה והגובה החדש
-    const dragonY = castlePos.y + (castleSize / 2) - 150 + hoverOffset;
 
-    if (images.dragon.complete) {
+    // חישוב מימדים לתצוגה ששומרים על פרופורציה
+    const renderHeight = 400; // גובה הדרקון על המסך
+    const aspectRatio = spriteConfig.frameWidth / spriteConfig.frameHeight;
+    const renderWidth = renderHeight * aspectRatio; // הרוחב מחושב אוטומטית
+
+    const dragonX = castlePos.x - 200;
+    const dragonY = castlePos.y + (castleSize / 2) - (renderHeight / 2) + hoverOffset;
+
+    if (currentDragonImg && currentDragonImg.complete) {
+        let position = Math.floor(spriteConfig.gameFrame / spriteConfig.staggerFrames) % spriteConfig.maxFrames;
+        let frameX = position * spriteConfig.frameWidth;
+
         ctx.save();
+
+        // העברת נקודת הייחוס למרכז הדרקון כדי לבצע היפוך
+        ctx.translate(dragonX + renderWidth / 2, dragonY + renderHeight / 2);
+        ctx.scale(-1, 1); // היפוך אופקי
+
         if (dragonColors[selectedDragonType]) {
             ctx.shadowBlur = 25;
             ctx.shadowColor = dragonColors[selectedDragonType];
         }
-        ctx.drawImage(images.dragon, dragonX, dragonY, dragonSize, dragonSize);
+
+        // ציור
+        ctx.drawImage(currentDragonImg,
+            frameX, 0, spriteConfig.frameWidth, spriteConfig.frameHeight,
+            -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight
+        );
+
         ctx.restore();
+        spriteConfig.gameFrame++;
     }
 
-    // 4. לוגיקת קליעים
+    // 4. קליעים
     projectiles.forEach((proj, index) => {
         proj.update();
         proj.draw();
-
         if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) {
             projectiles.splice(index, 1);
         }
     });
 
-    // 5. לוגיקת אויבים
+    // 5. אויבים
     enemies.forEach((enemy, enemyIndex) => {
         enemy.update();
         enemy.draw();
 
         projectiles.forEach((proj, projIndex) => {
             const dist = Math.hypot(proj.x - (enemy.x + enemy.width/2), proj.y - (enemy.y + enemy.height/2));
-
             if (dist < enemy.width / 2 + proj.radius) {
                 enemy.health -= damage;
                 projectiles.splice(projIndex, 1);
@@ -291,15 +303,12 @@ function animate() {
 // אירוע ירייה
 canvas.addEventListener('click', (e) => {
     if (!gameActive) return;
-
     const now = Date.now();
     if (now - lastShotTime < attackSpeed) return;
     lastShotTime = now;
 
-    // ירייה מותאמת למיקום החדש של הדרקון
     const startX = castlePos.x - 20;
     const startY = castlePos.y + (castleSize / 2) - 40;
-
     projectiles.push(new Projectile(startX, startY, e.clientX, e.clientY));
 });
 
