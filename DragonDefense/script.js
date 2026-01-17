@@ -5,14 +5,15 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- הגדרות אנימציה לדרקונים (מעודכן לפי 717x391) ---
+// --- הגדרות אנימציה לדרקונים ---
+// --- הגדרות אנימציה לדרקונים ---
 const spriteConfig = {
-    // חישוב: 717 לחלק ל-3 פריימים = 239 רוחב לפריים
-    frameWidth: 239,
-    frameHeight: 391,
-    maxFrames: 3,      // שונה ל-3 פריימים
+    // חישוב מדויק: הרוחב הכולל (717) לחלק ל-8 פריימים
+    frameWidth: 717 / 8,  // יוצא בערך 89.625
+    frameHeight: 391,     // חובה להשתמש בגובה המקורי של התמונה!
+    maxFrames: 8,
     gameFrame: 0,
-    staggerFrames: 10
+    staggerFrames: 8
 };
 
 // --- טעינת תמונות ---
@@ -233,33 +234,57 @@ function animate() {
 
     const hoverOffset = Math.sin(Date.now() / 400) * 12;
 
-    // חישוב מימדים לתצוגה ששומרים על פרופורציה
-    const renderHeight = 400; // גובה הדרקון על המסך
+    // הגדרת גודל תצוגה על המסך
+    // הגדרת הגובה הרצוי על המסך (אפשר לשחק עם המספר הזה)
+    const renderHeight = 300;
+
+    // חישוב הפרופורציה: רוחב הפריים חלקי גובה הפריים
+    // (89.625 חלקי 391 נותן יחס של בערך 0.23 - הדרקון די צר וגבוה)
     const aspectRatio = spriteConfig.frameWidth / spriteConfig.frameHeight;
-    const renderWidth = renderHeight * aspectRatio; // הרוחב מחושב אוטומטית
+    const renderWidth = renderHeight * aspectRatio;
 
-    const dragonX = castlePos.x - 200;
+    // עדכון המיקום כדי שיהיה מול הטירה
+    const dragonX = castlePos.x - 250;
     const dragonY = castlePos.y + (castleSize / 2) - (renderHeight / 2) + hoverOffset;
-
     if (currentDragonImg && currentDragonImg.complete) {
-        let position = Math.floor(spriteConfig.gameFrame / spriteConfig.staggerFrames) % spriteConfig.maxFrames;
-        let frameX = position * spriteConfig.frameWidth;
+
+        let frameIndex = 0;
+        const timeSinceShot = Date.now() - lastShotTime;
+        const attackAnimDuration = 600; // זמן הצגת אנימציית התקיפה
+
+        if (timeSinceShot < attackAnimDuration) {
+            // --- מצב תקיפה ---
+            // משתמש בפריימים 6 ו-7 (השניים האחרונים)
+            const attackStart = 6;
+            const attackCount = 2;
+
+            let localFrame = Math.floor(spriteConfig.gameFrame / (spriteConfig.staggerFrames / 2)) % attackCount;
+            frameIndex = attackStart + localFrame;
+
+        } else {
+            // --- מצב רגיל (ריחוף) ---
+            // משתמש בפריימים 0 עד 5 (6 הראשונים)
+            const flyFramesCount = 5;
+            frameIndex = Math.floor(spriteConfig.gameFrame / spriteConfig.staggerFrames) % flyFramesCount;
+        }
+
+        let frameX = frameIndex * spriteConfig.frameWidth;
 
         ctx.save();
 
-        // העברת נקודת הייחוס למרכז הדרקון כדי לבצע היפוך
+        // מרכוז הדרקון והיפוך כיוון (מסתכל שמאלה)
         ctx.translate(dragonX + renderWidth / 2, dragonY + renderHeight / 2);
-        ctx.scale(-1, 1); // היפוך אופקי
+        ctx.scale(-1, 1);
 
         if (dragonColors[selectedDragonType]) {
             ctx.shadowBlur = 25;
             ctx.shadowColor = dragonColors[selectedDragonType];
         }
 
-        // ציור
+        // ציור הפריים מתוך ה-Sprite Sheet
         ctx.drawImage(currentDragonImg,
-            frameX, 0, spriteConfig.frameWidth, spriteConfig.frameHeight,
-            -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight
+            frameX, 0, spriteConfig.frameWidth, spriteConfig.frameHeight, // המקור בתמונה
+            -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight // היעד על המסך
         );
 
         ctx.restore();
