@@ -1,224 +1,200 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-canvas.width = 1200;
-canvas.height = 700;
+// התאמת גודל הקנבס למסך
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
 // --- טעינת תמונות ---
-const images = {};
-// השארתי את הקישור הזמני לרקע שעבד לך.
-const imageSources = {
-    background: 'assets/background.png',
-    castle: 'assets/castle.png',
-    dragon: 'assets/dragon.png',
-    skeleton: 'assets/skeleton.png'
+const images = {
+    background: new Image(),
+    castle: new Image(),
+    dragon: new Image(),
+    skeleton: new Image()
 };
 
-let imagesLoaded = 0;
-const totalImages = Object.keys(imageSources).length;
+images.background.src = 'assets/background.png';
+images.castle.src = 'assets/castle.png';
+images.dragon.src = 'assets/dragon.png';
+images.skeleton.src = 'assets/skeleton.png';
 
-function loadImages(callback) {
-    for (let key in imageSources) {
-        images[key] = new Image();
-        images[key].src = imageSources[key];
+// --- הגדרות מיקום וגודל מעודכנות ---
 
-        images[key].onload = () => {
-            imagesLoaded++;
-            if (imagesLoaded === totalImages) callback();
-        };
+// הרמנו את קו הקרקע למעלה כדי להתאים לשביל
+const groundLevel = canvas.height - 220;
 
-        images[key].onerror = () => {
-            console.error(`Error loading image: ${imageSources[key]}`);
-            // ממשיכים גם אם יש שגיאה כדי לא לתקוע את המשחק, נשתמש בגיבויים
-            imagesLoaded++;
-            if (imagesLoaded === totalImages) callback();
-        }
-    }
-}
+// נתוני הטירה
+const castleSize = 400;
+const castlePos = {
+    x: canvas.width - 410,
+    y: groundLevel - 320 // מותאם לקו הקרקע החדש
+};
 
-// --- משתני משחק ---
-let gameRunning = false;
-let selectedDragonType = null;
-let enemies = [];
-let projectiles = [];
-let spawnTimer = 0;
+// --- משתני משחק (Stats) ---
+let gameActive = false;
+let score = 0;
 let level = 1;
-
 let gold = 100;
-let castleHealth = 150; // הגדלתי קצת חיים התחלתיים כי הטירה גדולה
-let maxCastleHealth = 150;
+let castleHealth = 100;
+let maxCastleHealth = 100;
 
-let damageMultiplier = 1;
-let attackSpeedMultiplier = 1;
+// נתוני שדרוגים
+let damage = 20;
+let attackSpeed = 1000;
+let lastShotTime = 0;
 let regenRate = 0;
-let upgradeCosts = { damage: 50, speed: 50, maxHealth: 40, regen: 60 };
+let projectileSpeed = 8;
 
-// --- הגדרת צבעים לדרקונים ---
+// סוג דרקון שנבחר
+let selectedDragonType = 'fire';
+
 const dragonColors = {
-    fire: '#e74c3c',    // אדום
-    electric: '#f1c40f', // צהוב
-    poison: '#8e44ad'   // סגול
+    'fire': 'rgba(248,0,0,0.6)',
+    'electric': 'rgb(255,229,0)',
+    'poison': 'rgb(0,255,0)'
 };
-
-// מיקום בסיס הטירה על השביל
-const castlePos = { x: 130, y: 580 };
 
 // --- מחלקות (Classes) ---
 
-class Enemy {
-    constructor() {
-        this.x = canvas.width + 50;
-        // פיזור האויבים על רוחב השביל
-        this.y = castlePos.y + (Math.random() * 60 - 30);
-
-        this.speed = (1.5 + (Math.random() * 0.5)) + (level * 0.1);
-        this.radius = 30;
-        this.maxHealth = 30 + (level * 5);
-        this.health = this.maxHealth;
-    }
-
-    update() {
-        const dx = castlePos.x - this.x;
-        const dy = castlePos.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        const velocityX = (dx / distance) * this.speed;
-        const velocityY = (dy / distance) * this.speed;
-
-        this.x += velocityX;
-        this.y += velocityY * 0.2; // תנועה אנכית עדינה יותר לשמירה על השביל
-
-        // הגדלתי את טווח הפגיעה כי הטירה גדולה יותר
-        if (distance < 100) {
-            this.hitCastle();
-            return true;
-        }
-        return false;
-    }
-
-    draw() {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.scale(-1, 1);
-
-        if (images.skeleton && images.skeleton.complete && images.skeleton.naturalWidth !== 0) {
-            ctx.drawImage(images.skeleton, -25, -65, 50, 70);
-        } else {
-            ctx.fillStyle = 'red';
-            ctx.beginPath();
-            ctx.arc(0, 0, 20, 0, Math.PI*2);
-            ctx.fill();
-        }
-        ctx.restore();
-
-        // בר חיים
-        ctx.fillStyle = 'red';
-        ctx.fillRect(this.x - 20, this.y - 70, 40, 6);
-        ctx.fillStyle = '#2ecc71';
-        ctx.fillRect(this.x - 20, this.y - 70, (40 * (this.health / this.maxHealth)), 6);
-    }
-
-    hitCastle() {
-        castleHealth -= 10;
-        updateUI();
-        if (castleHealth <= 0) {
-            alert("המשחק נגמר! הטירה נפלה.");
-            location.reload();
-        }
-    }
-}
-
 class Projectile {
-    constructor(x, y, targetEnemy, type) {
+    constructor(x, y, targetX, targetY) {
         this.x = x;
         this.y = y;
-        this.target = targetEnemy;
-        this.type = type;
-        this.radius = 10; // קליע קצת יותר גדול
-        this.speed = 12;
+        this.radius = 8;
+        this.color = dragonColors[selectedDragonType] || 'yellow';
 
-        // שימוש באותם צבעים שהוגדרו לדרקון
-        if (type === 'fire') {
-            this.color = dragonColors.fire;
-            this.damage = 10 * damageMultiplier;
-        } else if (type === 'electric') {
-            this.color = dragonColors.electric;
-            this.damage = 5 * damageMultiplier;
-            this.speed = 16;
-        } else if (type === 'poison') {
-            this.color = dragonColors.poison;
-            this.damage = 15 * damageMultiplier;
-            this.speed = 10;
-        }
-    }
-
-    update() {
-        if (this.target.health <= 0) return true;
-
-        const dx = this.target.x - this.x;
-        const dy = (this.target.y - 40) - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        const velocityX = (dx / distance) * this.speed;
-        const velocityY = (dy / distance) * this.speed;
-
-        this.x += velocityX;
-        this.y += velocityY;
-
-        if (distance < this.target.radius) {
-            this.target.health -= this.damage;
-            return true;
-        }
-        return false;
+        const angle = Math.atan2(targetY - y, targetX - x);
+        this.velocity = {
+            x: Math.cos(angle) * projectileSpeed,
+            y: Math.sin(angle) * projectileSpeed
+        };
     }
 
     draw() {
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this.color.replace('0.6', '1');
         ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
         ctx.closePath();
+        ctx.shadowBlur = 0;
+    }
+
+    update() {
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
     }
 }
 
-// --- ניהול UI ---
-function updateUI() {
-    document.getElementById('health').innerText = Math.floor(castleHealth) + "/" + maxCastleHealth;
-    document.getElementById('gold').innerText = Math.floor(gold);
-    document.getElementById('level').innerText = level;
+class Enemy {
+    constructor() {
+        this.x = -50;
+        // מיקום האויבים מותאם לקו הקרקע החדש
+        this.y = groundLevel + 20;
+        this.width = 60;
+        this.height = 80;
+        this.speed = (0.5 + level * 0.15);
+        this.maxHealth = 20 + (level * 10);
+        this.health = this.maxHealth;
+        this.markedForDeletion = false;
 
-    document.getElementById('cost-damage').innerText = upgradeCosts.damage;
-    document.getElementById('cost-speed').innerText = upgradeCosts.speed;
-    document.getElementById('cost-maxHealth').innerText = upgradeCosts.maxHealth;
-    document.getElementById('cost-regen').innerText = upgradeCosts.regen;
+        // וריאציה קטנה במיקום
+        this.y += Math.random() * 20 - 10;
+    }
+
+    update() {
+        this.x += this.speed;
+
+        if (this.x > castlePos.x + 40) {
+            this.markedForDeletion = true;
+            takeDamage(10);
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+        // --- תיקון כיוון האויבים ---
+        // הסרתי את ה-scale(-1, 1) כדי להפוך את הכיוון
+        ctx.scale(1, 1);
+
+        const walkCycle = Math.sin(Date.now() / 150) * 0.15;
+        ctx.rotate(walkCycle);
+
+        if (images.skeleton.complete) {
+            ctx.drawImage(images.skeleton, -this.width / 2, -this.height / 2, this.width, this.height);
+        } else {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        }
+
+        ctx.restore();
+
+        // בר חיים
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = 'red';
+        ctx.fillRect(this.x, this.y - 15, this.width, 5);
+        ctx.fillStyle = '#2ecc71';
+        ctx.fillRect(this.x, this.y - 15, this.width * healthPercent, 5);
+    }
 }
+
+// --- ניהול משחק ---
+let projectiles = [];
+let enemies = [];
+
+// פונקציות ממשק
+window.startGame = function(type) {
+    selectedDragonType = type;
+    document.getElementById('dragon-selector').style.display = 'none';
+    gameActive = true;
+    animate();
+
+    // יצירת אויבים
+    setInterval(() => {
+        if (gameActive) enemies.push(new Enemy());
+    }, 2500 - (level * 50));
+
+    // התחדשות חיים
+    setInterval(() => {
+        if (gameActive && castleHealth < maxCastleHealth) {
+            castleHealth = Math.min(maxCastleHealth, castleHealth + regenRate);
+            updateUI();
+        }
+    }, 1000);
+};
 
 window.toggleUpgradeMenu = function() {
     const modal = document.getElementById('upgrade-modal');
     modal.classList.toggle('hidden');
-    updateUI();
 };
 
 window.buyUpgrade = function(type) {
-    const cost = upgradeCosts[type];
-    if (gold >= cost) {
-        gold -= cost;
+    const costs = {
+        'damage': parseInt(document.getElementById('cost-damage').innerText),
+        'speed': parseInt(document.getElementById('cost-speed').innerText),
+        'maxHealth': parseInt(document.getElementById('cost-maxHealth').innerText),
+        'regen': parseInt(document.getElementById('cost-regen').innerText)
+    };
+
+    if (gold >= costs[type]) {
+        gold -= costs[type];
+
         if (type === 'damage') {
-            damageMultiplier += 0.25;
-            upgradeCosts.damage = Math.floor(upgradeCosts.damage * 1.5);
+            damage += 5;
+            document.getElementById('cost-damage').innerText = Math.floor(costs[type] * 1.5);
         } else if (type === 'speed') {
-            attackSpeedMultiplier += 0.15;
-            upgradeCosts.speed = Math.floor(upgradeCosts.speed * 1.5);
+            attackSpeed = Math.max(100, attackSpeed - 100);
+            document.getElementById('cost-speed').innerText = Math.floor(costs[type] * 1.5);
         } else if (type === 'maxHealth') {
             maxCastleHealth += 50;
             castleHealth += 50;
-            upgradeCosts.maxHealth += 20;
+            document.getElementById('cost-maxHealth').innerText = Math.floor(costs[type] * 1.5);
         } else if (type === 'regen') {
-            regenRate += 0.5;
-            upgradeCosts.regen = Math.floor(upgradeCosts.regen * 1.3);
+            regenRate += 1;
+            document.getElementById('cost-regen').innerText = Math.floor(costs[type] * 1.5);
         }
         updateUI();
     } else {
@@ -226,134 +202,105 @@ window.buyUpgrade = function(type) {
     }
 };
 
-window.startGame = function(type) {
-    selectedDragonType = type;
-    document.getElementById('dragon-selector').style.display = 'none';
-    gameRunning = true;
+function takeDamage(amount) {
+    castleHealth -= amount;
+    if (castleHealth <= 0) {
+        castleHealth = 0;
+        gameActive = false;
+        alert("המשחק נגמר! הטירה נפלה.");
+        location.reload();
+    }
     updateUI();
-    animate();
-};
-
-function getClosestEnemy() {
-    let closest = null;
-    let minDist = 1200;
-    enemies.forEach(enemy => {
-        const dx = enemy.x - castlePos.x;
-        const dy = enemy.y - castlePos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDist) {
-            minDist = dist;
-            closest = enemy;
-        }
-    });
-    return closest;
 }
 
-// --- לולאת המשחק ---
+function updateUI() {
+    document.getElementById('health').innerText = Math.floor(castleHealth) + '/' + maxCastleHealth;
+    document.getElementById('gold').innerText = gold;
+    document.getElementById('level').innerText = level;
+}
+
+// לולאת המשחק
 function animate() {
-    if (!gameRunning) return;
+    if (!gameActive) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. רקע
-    ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if (images.background && images.background.complete && images.background.naturalWidth !== 0) {
+    // 1. ציור רקע
+    if (images.background.complete) {
         ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
     }
 
-    // 2. חישוב מיקומים לטירה
-    const castleW = 300;
-    const castleH = 300;
-    const castleDrawX = castlePos.x - (castleW / 2) + 50;
-    const castleDrawY = castlePos.y - castleH + 5;
-
-    // ציור טירה
-    if (images.castle && images.castle.complete && images.castle.naturalWidth !== 0) {
-        ctx.drawImage(images.castle, castleDrawX, castleDrawY, castleW, castleH);
-    } else {
-        ctx.fillStyle = 'gray';
-        ctx.fillRect(castlePos.x - 50, castlePos.y - 100, 100, 100);
+    // 2. ציור טירה
+    if (images.castle.complete) {
+        ctx.drawImage(images.castle, castlePos.x, castlePos.y, castleSize, castleSize);
     }
 
-    // 3. ציור דרקון עם הילה זוהרת (תיקון ההעלמות)
-    const dragonW = 150;
-    const dragonH = 150;
-    // כיוונון גובה הדרקון כדי שיישב בול על המגדל
-    const dragonX = castlePos.x - (dragonW / 2) + 50;
-    const dragonY = castleDrawY - 120;
+    // 3. ציור הדרקון (גם הוא עלה למעלה עם קו הקרקע החדש)
+    const hoverOffset = Math.sin(Date.now() / 400) * 12;
+    const dragonSize = 200;
+    const dragonX = castlePos.x - 150;
+    // מיקום הדרקון מחושב מחדש לפי הטירה והגובה החדש
+    const dragonY = castlePos.y + (castleSize / 2) - 150 + hoverOffset;
 
-    if (images.dragon && images.dragon.complete && images.dragon.naturalWidth !== 0) {
-        ctx.save(); // שומרים מצב
-
-        // אם נבחר סוג דרקון - מוסיפים לו הילה בצבע המתאים
-        if (selectedDragonType && dragonColors[selectedDragonType]) {
-            ctx.shadowBlur = 20; // חוזק הזוהר
-            ctx.shadowColor = dragonColors[selectedDragonType]; // צבע הזוהר (אדום/צהוב/סגול)
+    if (images.dragon.complete) {
+        ctx.save();
+        if (dragonColors[selectedDragonType]) {
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = dragonColors[selectedDragonType];
         }
-
-        // מציירים את הדרקון (עכשיו הוא יופיע עם הזוהר מסביבו)
-        ctx.drawImage(images.dragon, dragonX, dragonY, dragonW, dragonH);
-
-        ctx.restore(); // מחזירים מצב כדי לא להשפיע על שאר הציורים
+        ctx.drawImage(images.dragon, dragonX, dragonY, dragonSize, dragonSize);
+        ctx.restore();
     }
 
+    // 4. לוגיקת קליעים
+    projectiles.forEach((proj, index) => {
+        proj.update();
+        proj.draw();
 
-    // --- לוגיקה ---
-    if (spawnTimer % 60 === 0 && regenRate > 0) {
-        if (castleHealth < maxCastleHealth) {
-            castleHealth += regenRate;
-            if (castleHealth > maxCastleHealth) castleHealth = maxCastleHealth;
-            updateUI();
+        if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) {
+            projectiles.splice(index, 1);
         }
-    }
+    });
 
-    spawnTimer++;
-    if (spawnTimer % (100 - (level * 2)) === 0) {
-        enemies.push(new Enemy());
-    }
-    if (spawnTimer % 1000 === 0) {
-        level++;
-        updateUI();
-    }
-
-    let baseFireRate = 60;
-    if (selectedDragonType === 'electric') baseFireRate = 30;
-    const fireRate = Math.max(5, Math.floor(baseFireRate / attackSpeedMultiplier));
-
-    if (spawnTimer % fireRate === 0) {
-        const target = getClosestEnemy();
-        if (target) {
-            // הירי יוצא מפה הדרקון (מותאם לגודל החדש)
-            projectiles.push(new Projectile(dragonX + dragonW/2 + 20, dragonY + 60, target, selectedDragonType));
-        }
-    }
-
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        const p = projectiles[i];
-        const hit = p.update();
-        p.draw();
-        if (hit || p.x > canvas.width) projectiles.splice(i, 1);
-    }
-
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const enemy = enemies[i];
-        const hitCastle = enemy.update();
+    // 5. לוגיקת אויבים
+    enemies.forEach((enemy, enemyIndex) => {
+        enemy.update();
         enemy.draw();
 
-        if (enemy.health <= 0) {
-            gold += 20;
-            updateUI();
-            enemies.splice(i, 1);
-            continue;
-        }
-        if (hitCastle) enemies.splice(i, 1);
-    }
+        projectiles.forEach((proj, projIndex) => {
+            const dist = Math.hypot(proj.x - (enemy.x + enemy.width/2), proj.y - (enemy.y + enemy.height/2));
+
+            if (dist < enemy.width / 2 + proj.radius) {
+                enemy.health -= damage;
+                projectiles.splice(projIndex, 1);
+
+                if (enemy.health <= 0) {
+                    enemies.splice(enemyIndex, 1);
+                    gold += 10 + (level * 2);
+                    score += 10;
+                    if (score % 60 === 0) level++;
+                    updateUI();
+                }
+            }
+        });
+    });
 
     requestAnimationFrame(animate);
 }
-// התחלה
-loadImages(() => {
-    console.log("Game assets loaded.");
+
+// אירוע ירייה
+canvas.addEventListener('click', (e) => {
+    if (!gameActive) return;
+
+    const now = Date.now();
+    if (now - lastShotTime < attackSpeed) return;
+    lastShotTime = now;
+
+    // ירייה מותאמת למיקום החדש של הדרקון
+    const startX = castlePos.x - 20;
+    const startY = castlePos.y + (castleSize / 2) - 40;
+
+    projectiles.push(new Projectile(startX, startY, e.clientX, e.clientY));
 });
+
+updateUI();
